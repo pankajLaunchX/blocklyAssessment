@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Blockly Programming Assessment</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blockly/10.3.0/blockly.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blockly/10.3.0/blocks.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blockly/10.3.0/javascript.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        #blocklyDiv {
+            height: 90%;
+            width: 60%;
+            position: absolute;
+            left: 0;
+        }
+        #visualizationArea {
+            width: 35%;
+            position: absolute;
+            right: 20px;
+            top: 20px;
+        }
+        #gameCanvas {
+            border: 2px solid #333;
+            background: white;
+        }
+        #controlsArea {
+            margin-top: 20px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #output {
+            margin-top: 20px;
+            padding: 10px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            height: 100px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="blocklyDiv" ></div>
+    <div id="visualizationArea">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div id="controlsArea">
+            <button onclick="runCode()">Run Program</button>
+            <button onclick="resetSimulation()">Reset</button>
+        </div>
+        <div id="output"></div>
+    </div>
+
+    <xml id="toolbox" style="display: none">
+        <category name="Movement" colour="%{BKY_MATH_HUE}">
+            <block type="move_forward"></block>
+            <block type="turn_left"></block>
+            <block type="turn_right"></block>
+        </category>
+        <category name="Logic" colour="%{BKY_LOGIC_HUE}">
+            <block type="logic_boolean"></block>
+            <block type="controls_if"></block>
+            <block type="path_ahead"></block>
+        </category>
+        <category name="Math" colour="%{BKY_MATH_HUE}">
+            <block type="math_number"></block>
+            <block type="math_arithmetic"></block>
+        </category>
+        <category name="Loops" colour="%{BKY_LOOPS_HUE}">
+            <block type="controls_repeat"></block>
+            <block type="controls_for"></block>
+            <block type="controls_whileUntil"></block>
+        </category>
+    </xml>
+
+    <script>
+        // Game state
+        let characterPos = { x: 0, y: 0, direction: 0 };
+        let gridSize = 8;
+        let grid = [];
+        let isRunning = false;
+        
+        // Initialize Blockly
+        const workspace = Blockly.inject('blocklyDiv', {
+            toolbox: document.getElementById('toolbox'),
+            scrollbars: true,
+            trashcan: true,
+            grid: {
+                spacing: 20,
+                length: 5,
+                colour: '#ccc',
+                snap: true
+            }
+        });
+
+        // Custom block definitions
+        Blockly.Blocks['move_forward'] = {
+            init: function() {
+                this.appendDummyInput()
+                    .appendField("Move Forward");
+                this.setPreviousStatement(true, null);
+                this.setNextStatement(true, null);
+                this.setColour(160);
+            }
+        };
+
+        Blockly.Blocks['turn_left'] = {
+            init: function() {
+                this.appendDummyInput()
+                    .appendField("Turn Left");
+                this.setPreviousStatement(true, null);
+                this.setNextStatement(true, null);
+                this.setColour(160);
+            }
+        };
+
+        Blockly.Blocks['turn_right'] = {
+            init: function() {
+                this.appendDummyInput()
+                    .appendField("Turn Right");
+                this.setPreviousStatement(true, null);
+                this.setNextStatement(true, null);
+                this.setColour(160);
+            }
+        };
+
+        Blockly.Blocks['path_ahead'] = {
+            init: function() {
+                this.appendDummyInput()
+                    .appendField("Path Ahead?");
+                this.setOutput(true, "Boolean");
+                this.setColour(210);
+            }
+        };
+
+        // JavaScript generators
+        Blockly.JavaScript['move_forward'] = function(block) {
+            return 'await moveForward();\n';
+        };
+
+        Blockly.JavaScript['turn_left'] = function(block) {
+            return 'await turnLeft();\n';
+        };
+
+        Blockly.JavaScript['turn_right'] = function(block) {
+            return 'await turnRight();\n';
+        };
+
+        Blockly.JavaScript['path_ahead'] = function(block) {
+            return ['isPathAhead()', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        // Initialize game grid
+        function initializeGrid() {
+            grid = [];
+            for (let i = 0; i < gridSize; i++) {
+                grid[i] = [];
+                for (let j = 0; j < gridSize; j++) {
+                    grid[i][j] = 1; // 1 represents walkable path
+                }
+            }
+            // Add some walls (0 represents wall)
+            grid[1][1] = 0;
+            grid[1][2] = 0;
+            grid[2][1] = 0;
+            grid[3][3] = 0;
+            grid[4][3] = 0;
+            grid[5][3] = 0;
+            
+            // Add goal (2 represents goal)
+            grid[gridSize-1][gridSize-1] = 2;
+        }
+
+        // Game logic functions
+        async function moveForward() {
+            if (isRunning) {
+                let newX = characterPos.x;
+                let newY = characterPos.y;
+                
+                switch(characterPos.direction) {
+                    case 0: newX++; break; // right
+                    case 1: newY++; break; // down
+                    case 2: newX--; break; // left
+                    case 3: newY--; break; // up
+                }
+
+                if (isValidMove(newX, newY)) {
+                    characterPos.x = newX;
+                    characterPos.y = newY;
+                    log("Moving forward");
+                    await sleep(500);
+                    drawGame();
+                } else {
+                    log("Cannot move forward - path blocked!");
+                }
+            }
+        }
+
+        async function turnLeft() {
+            if (isRunning) {
+                characterPos.direction = (characterPos.direction + 3) % 4;
+                log("Turning left");
+                await sleep(500);
+                drawGame();
+            }
+        }
+
+        async function turnRight() {
+            if (isRunning) {
+                characterPos.direction = (characterPos.direction + 1) % 4;
+                log("Turning right");
+                await sleep(500);
+                drawGame();
+            }
+        }
+
+        function isPathAhead() {
+            let checkX = characterPos.x;
+            let checkY = characterPos.y;
+            
+            switch(characterPos.direction) {
+                case 0: checkX++; break;
+                case 1: checkY++; break;
+                case 2: checkX--; break;
+                case 3: checkY--; break;
+            }
+
+            return isValidMove(checkX, checkY);
+        }
+
+        function isValidMove(x, y) {
+            return x >= 0 && x < gridSize && y >= 0 && y < gridSize && grid[y][x] !== 0;
+        }
+
+        // Utility functions
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function log(message) {
+            const output = document.getElementById('output');
+            output.innerHTML += message + '<br>';
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // Drawing functions
+        function drawGame() {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const cellSize = canvas.width / gridSize;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid
+            for (let y = 0; y < gridSize; y++) {
+                for (let x = 0; x < gridSize; x++) {
+                    ctx.strokeStyle = '#ccc';
+                    ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+                    switch(grid[y][x]) {
+                        case 0: // Wall
+                            ctx.fillStyle = '#666';
+                            ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                            break;
+                        case 2: // Goal
+                            ctx.fillStyle = '#4CAF50';
+                            ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                            break;
+                    }
+                }
+            }
+
+            // Draw character
+            ctx.fillStyle = '#f44336';
+            const charX = characterPos.x * cellSize + cellSize/2;
+            const charY = characterPos.y * cellSize + cellSize/2;
+            
+            // Draw triangle for direction
+            ctx.save();
+            ctx.translate(charX, charY);
+            ctx.rotate(characterPos.direction * Math.PI/2);
+            ctx.beginPath();
+            ctx.moveTo(0, -cellSize/3);
+            ctx.lineTo(cellSize/3, cellSize/3);
+            ctx.lineTo(-cellSize/3, cellSize/3);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Control functions
+        async function runCode() {
+            if (!isRunning) {
+                isRunning = true;
+                document.getElementById('output').innerHTML = '';
+                try {
+                    const code = Blockly.JavaScript.workspaceToCode(workspace);
+                    const asyncFunction = new Function('return (async function() { ' + code + ' })')();
+                    await asyncFunction();
+                    
+                    // Check win condition
+                    if (grid[characterPos.y][characterPos.x] === 2) {
+                        log('Goal reached! 🎉');
+                    }
+                } catch (e) {
+                    log('Error: ' + e);
+                }
+                isRunning = false;
+            }
+        }
+
+        function resetSimulation() {
+            characterPos = { x: 0, y: 0, direction: 0 };
+            document.getElementById('output').innerHTML = '';
+            drawGame();
+        }
+
+        // Initialize the game
+        initializeGrid();
+        drawGame();
+    </script>
+</body>
+</html>
